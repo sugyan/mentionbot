@@ -3,8 +3,10 @@ package replybot
 import (
 	"github.com/kurrik/oauth1a"
 	"github.com/kurrik/twittergo"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // Bot type
@@ -22,6 +24,10 @@ func NewBot(consumerKey string, consumerSecret string) *Bot {
 	return &Bot{
 		client: client,
 	}
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }
 
 // FollowersIDs returns follower's IDs
@@ -58,6 +64,10 @@ func (bot *Bot) FollowersIDs(userID string) ([]string, error) {
 		} else {
 			cursor = results.NextCursorStr()
 		}
+	}
+	for i := range ids {
+		j := rand.Intn(i + 1)
+		ids[i], ids[j] = ids[j], ids[i]
 	}
 	return ids, nil
 }
