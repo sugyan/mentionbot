@@ -65,7 +65,8 @@ func (bot *Bot) FollowersIDs(userID string) ([]string, error) {
 			cursor = results.NextCursorStr()
 		}
 	}
-	for i := range ids {
+
+	for i := len(ids) - 1; i >= 0; i-- {
 		j := rand.Intn(i + 1)
 		ids[i], ids[j] = ids[j], ids[i]
 	}
