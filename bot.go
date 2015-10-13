@@ -1,4 +1,4 @@
-package replybot
+package mentionbot
 
 import (
 	"github.com/kurrik/oauth1a"

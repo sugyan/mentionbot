@@ -1,4 +1,4 @@
-package replybot
+package mentionbot
 
 // IDs is id list
 type IDs []string
