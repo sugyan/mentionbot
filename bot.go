@@ -4,16 +4,15 @@ import (
 	"github.com/kurrik/oauth1a"
 	"github.com/kurrik/twittergo"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Bot type
 type Bot struct {
 	client *twittergo.Client
+	debug  bool
 }
 
 // NewBot returns new bot
@@ -28,8 +27,9 @@ func NewBot(consumerKey string, consumerSecret string) *Bot {
 	}
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
+// Debug sets debug flag
+func (bot *Bot) Debug(enabled bool) {
+	bot.debug = enabled
 }
 
 // UsersLookup returns list of users info
@@ -67,9 +67,19 @@ func (bot *Bot) FollowersIDs(userID string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if bot.debug {
+			log.Printf("request: %s %s", req.Method, req.URL)
+		}
+
 		res, err := bot.client.SendRequest(req)
 		if err != nil {
 			return nil, err
+		}
+		if bot.debug {
+			log.Printf("response: %s", res.Status)
+			if res.HasRateLimit() {
+				log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+			}
 		}
 
 		results := &CursoredIDs{}
@@ -83,11 +93,6 @@ func (bot *Bot) FollowersIDs(userID string) ([]string, error) {
 		} else {
 			cursor = results.NextCursorStr()
 		}
-	}
-
-	for i := len(ids) - 1; i >= 0; i-- {
-		j := rand.Intn(i + 1)
-		ids[i], ids[j] = ids[j], ids[i]
 	}
 	return ids, nil
 }
