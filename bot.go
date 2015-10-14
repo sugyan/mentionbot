@@ -3,9 +3,11 @@ package mentionbot
 import (
 	"github.com/kurrik/oauth1a"
 	"github.com/kurrik/twittergo"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -28,6 +30,23 @@ func NewBot(consumerKey string, consumerSecret string) *Bot {
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
+}
+
+// UsersLookup returns list of users info
+func (bot *Bot) UsersLookup(ids []string) error {
+	query := url.Values{}
+	query.Set("user_id", strings.Join(ids, ","))
+	req, err := http.NewRequest("GET", "/1.1/users/lookup.json?"+query.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	res, err := bot.client.SendRequest(req)
+	if err != nil {
+		return err
+	}
+
+	log.Println(res.ReadBody())
+	return nil
 }
 
 // FollowersIDs returns follower's IDs
