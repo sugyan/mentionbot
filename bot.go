@@ -33,20 +33,35 @@ func (bot *Bot) Debug(enabled bool) {
 }
 
 // UsersLookup returns list of users info
-func (bot *Bot) UsersLookup(ids []string) error {
+func (bot *Bot) UsersLookup(ids []string) ([]twittergo.User, error) {
 	query := url.Values{}
 	query.Set("user_id", strings.Join(ids, ","))
-	req, err := http.NewRequest("GET", "/1.1/users/lookup.json?"+query.Encode(), nil)
+	body := query.Encode()
+	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
+	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	res, err := bot.client.SendRequest(req)
-	if err != nil {
-		return err
+	if bot.debug {
+		log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
 	}
 
-	log.Println(res.ReadBody())
-	return nil
+	res, err := bot.client.SendRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	if bot.debug {
+		log.Printf("response: %v", res.Status)
+		if res.HasRateLimit() {
+			log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+		}
+	}
+
+	results := make([]twittergo.User, len(ids))
+	if err := res.Parse(&results); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // FollowersIDs returns follower's IDs
