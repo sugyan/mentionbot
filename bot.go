@@ -33,7 +33,7 @@ func (bot *Bot) Debug(enabled bool) {
 }
 
 // UsersLookup returns list of users info
-func (bot *Bot) UsersLookup(ids []string) ([]twittergo.User, error) {
+func (bot *Bot) UsersLookup(ids []string) ([]User, error) {
 	query := url.Values{}
 	query.Set("user_id", strings.Join(ids, ","))
 	body := query.Encode()
@@ -57,7 +57,7 @@ func (bot *Bot) UsersLookup(ids []string) ([]twittergo.User, error) {
 		}
 	}
 
-	results := make([]twittergo.User, len(ids))
+	results := make([]User, len(ids))
 	if err := res.Parse(&results); err != nil {
 		return nil, err
 	}
