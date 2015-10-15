@@ -1,11 +1,14 @@
 package mentionbot
 
 import (
+	"encoding/json"
+	"github.com/ChimeraCoder/anaconda"
 	"github.com/kurrik/oauth1a"
 	"github.com/kurrik/twittergo"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -33,9 +36,13 @@ func (bot *Bot) Debug(enabled bool) {
 }
 
 // UsersLookup returns list of users info
-func (bot *Bot) UsersLookup(ids []string) ([]User, error) {
+func (bot *Bot) UsersLookup(ids []int64) ([]anaconda.User, error) {
+	strIds := make([]string, len(ids))
+	for i, id := range ids {
+		strIds[i] = strconv.FormatInt(id, 10)
+	}
 	query := url.Values{}
-	query.Set("user_id", strings.Join(ids, ","))
+	query.Set("user_id", strings.Join(strIds, ","))
 	body := query.Encode()
 	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
 	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
@@ -57,23 +64,22 @@ func (bot *Bot) UsersLookup(ids []string) ([]User, error) {
 		}
 	}
 
-	results := make([]User, len(ids))
-	if err := res.Parse(&results); err != nil {
+	results := make([]anaconda.User, len(ids))
+	if err := json.NewDecoder(res.Body).Decode(&results); err != nil {
 		return nil, err
 	}
 	return results, nil
 }
 
 // FollowersIDs returns follower's IDs
-func (bot *Bot) FollowersIDs(userID string) ([]string, error) {
+func (bot *Bot) FollowersIDs(userID string) ([]int64, error) {
 	var (
-		ids    []string
+		ids    []int64
 		cursor string
 	)
 	for {
 		query := url.Values{}
 		query.Set("user_id", userID)
-		query.Set("stringify_ids", "true")
 		query.Set("count", "5000")
 		if cursor != "" {
 			query.Set("cursor", cursor)
@@ -97,17 +103,34 @@ func (bot *Bot) FollowersIDs(userID string) ([]string, error) {
 			}
 		}
 
-		results := &CursoredIDs{}
-		if err := res.Parse(results); err != nil {
+		results := &anaconda.Cursor{}
+		if err = json.NewDecoder(res.Body).Decode(results); err != nil {
 			return nil, err
 		}
-		ids = append(ids, results.IDs()...)
+		ids = append(ids, results.Ids...)
 
-		if results.NextCursorStr() == "0" {
+		if results.Next_cursor_str == "0" {
 			break
 		} else {
-			cursor = results.NextCursorStr()
+			cursor = results.Next_cursor_str
 		}
 	}
 	return ids, nil
+}
+
+// Tweets type for sorting by createdAt
+type Tweets []*anaconda.Tweet
+
+func (t Tweets) Len() int {
+	return len(t)
+}
+
+func (t Tweets) Less(i, j int) bool {
+	t1, _ := t[i].CreatedAtTime()
+	t2, _ := t[j].CreatedAtTime()
+	return t1.Before(t2)
+}
+
+func (t Tweets) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
 }
