@@ -34,6 +34,11 @@ func (ci CursoredIDs) IDs() IDs {
 // User is user info
 type User map[string]interface{}
 
+// IDStr returns id string
+func (u User) IDStr() string {
+	return u["id_str"].(string)
+}
+
 // ScreenName returns users screen name
 func (u User) ScreenName() string {
 	return u["screen_name"].(string)
@@ -44,7 +49,12 @@ func (u User) Status() Status {
 	if u["status"] == nil {
 		return nil
 	}
-	return Status(u["status"].(map[string]interface{}))
+	status := Status(u["status"].(map[string]interface{}))
+	user := make(map[string]interface{})
+	user["id_str"] = u.IDStr()
+	user["screen_name"] = u.ScreenName()
+	status["user"] = user
+	return status
 }
 
 // Status is tweeted status
@@ -63,4 +73,24 @@ func (s Status) CreatedAt() time.Time {
 		log.Fatalf("Could not parse time: %v", err)
 	}
 	return out
+}
+
+// User returns tweeted user
+func (s Status) User() User {
+	return User(s["user"].(map[string]interface{}))
+}
+
+// Statuses type
+type Statuses []Status
+
+func (s Statuses) Len() int {
+	return len(s)
+}
+
+func (s Statuses) Less(i, j int) bool {
+	return s[i].CreatedAt().Before(s[j].CreatedAt())
+}
+
+func (s Statuses) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }
