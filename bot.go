@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -35,49 +36,73 @@ func (bot *Bot) Debug(enabled bool) {
 	bot.debug = enabled
 }
 
-// UsersLookup returns list of users info
-func (bot *Bot) UsersLookup(ids []int64) ([]anaconda.User, error) {
-	strIds := make([]string, len(ids))
-	for i, id := range ids {
-		strIds[i] = strconv.FormatInt(id, 10)
-	}
-	query := url.Values{}
-	query.Set("user_id", strings.Join(strIds, ","))
-	body := query.Encode()
-	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
-	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+// FollowersTimeline returns followers timeline
+func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) {
+	ids, err := bot.followersIDs(userID)
 	if err != nil {
 		return nil, err
-	}
-	if bot.debug {
-		log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
 	}
 
-	res, err := bot.client.SendRequest(req)
-	if err != nil {
-		return nil, err
-	}
-	if bot.debug {
-		log.Printf("response: %v", res.Status)
-		if res.HasRateLimit() {
-			log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+	// TODO: shuffle ids?
+
+	for m := 0; ; m += 100 {
+		// user ids length upto 100
+		n := m + 100
+		if n > len(ids) {
+			n = len(ids)
+		}
+		if n-m < 1 {
+			break
+		}
+		strIds := make([]string, n-m)
+		for i, id := range ids[m:n] {
+			strIds[i] = strconv.FormatInt(id, 10)
+		}
+		// GET users/lookup
+		query := url.Values{}
+		query.Set("user_id", strings.Join(strIds, ","))
+		body := query.Encode()
+		req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
+		req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+		if err != nil {
+			return nil, err
+		}
+		if bot.debug {
+			log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
+		}
+		res, err := bot.client.SendRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		if bot.debug {
+			log.Printf("response: %v", res.Status)
+			if res.HasRateLimit() {
+				log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+			}
+		}
+		// decode to users
+		results := make([]anaconda.User, len(ids))
+		if err := json.NewDecoder(res.Body).Decode(&results); err != nil {
+			return nil, err
+		}
+		// append tweet if exist
+		for _, user := range results {
+			tweet := user.Status
+			if tweet != nil {
+				tweet.User = user
+				timeline = append(timeline, tweet)
+			}
 		}
 	}
-
-	results := make([]anaconda.User, len(ids))
-	if err := json.NewDecoder(res.Body).Decode(&results); err != nil {
-		return nil, err
-	}
-	return results, nil
+	// sort by createdAt
+	sort.Sort(timeline)
+	return
 }
 
-// FollowersIDs returns follower's IDs
-func (bot *Bot) FollowersIDs(userID string) ([]int64, error) {
-	var (
-		ids    []int64
-		cursor string
-	)
+func (bot *Bot) followersIDs(userID string) (ids []int64, err error) {
+	var cursor string
 	for {
+		// GET followers/ids
 		query := url.Values{}
 		query.Set("user_id", userID)
 		query.Set("count", "5000")
@@ -91,7 +116,6 @@ func (bot *Bot) FollowersIDs(userID string) ([]int64, error) {
 		if bot.debug {
 			log.Printf("request: %s %s", req.Method, req.URL)
 		}
-
 		res, err := bot.client.SendRequest(req)
 		if err != nil {
 			return nil, err
@@ -103,34 +127,36 @@ func (bot *Bot) FollowersIDs(userID string) ([]int64, error) {
 			}
 		}
 
+		// decode to Cursor result
 		results := &anaconda.Cursor{}
 		if err = json.NewDecoder(res.Body).Decode(results); err != nil {
 			return nil, err
 		}
 		ids = append(ids, results.Ids...)
 
+		// next loop?
 		if results.Next_cursor_str == "0" {
 			break
 		} else {
 			cursor = results.Next_cursor_str
 		}
 	}
-	return ids, nil
+	return
 }
 
-// Tweets type for sorting by createdAt
-type Tweets []*anaconda.Tweet
+// Timeline is array of tweet which can sort by createdAt
+type Timeline []*anaconda.Tweet
 
-func (t Tweets) Len() int {
+func (t Timeline) Len() int {
 	return len(t)
 }
 
-func (t Tweets) Less(i, j int) bool {
+func (t Timeline) Less(i, j int) bool {
 	t1, _ := t[i].CreatedAtTime()
 	t2, _ := t[j].CreatedAtTime()
 	return t1.Before(t2)
 }
 
-func (t Tweets) Swap(i, j int) {
+func (t Timeline) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
