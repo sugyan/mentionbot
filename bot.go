@@ -45,6 +45,7 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 
 	// TODO: shuffle ids?
 
+	// TODO: parallelize
 	for m := 0; ; m += 100 {
 		// user ids length upto 100
 		n := m + 100
@@ -58,7 +59,7 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 		for i, id := range ids[m:n] {
 			strIds[i] = strconv.FormatInt(id, 10)
 		}
-		// GET users/lookup
+		// GET(POST) users/lookup
 		query := url.Values{}
 		query.Set("user_id", strings.Join(strIds, ","))
 		body := query.Encode()
@@ -76,6 +77,7 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 		}
 		if bot.debug {
 			log.Printf("response: %v", res.Status)
+			// response of POST request doesn't have rate-limit headers...
 			if res.HasRateLimit() {
 				log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
 			}
