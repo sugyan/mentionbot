@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Bot type
@@ -45,55 +46,91 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 
 	// TODO: shuffle ids?
 
-	// TODO: parallelize
-	for m := 0; ; m += 100 {
-		// user ids length upto 100
-		n := m + 100
-		if n > len(ids) {
-			n = len(ids)
-		}
-		if n-m < 1 {
-			break
-		}
-		strIds := make([]string, n-m)
-		for i, id := range ids[m:n] {
-			strIds[i] = strconv.FormatInt(id, 10)
-		}
-		// GET(POST) users/lookup
-		query := url.Values{}
-		query.Set("user_id", strings.Join(strIds, ","))
-		body := query.Encode()
-		req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
-		req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
-		if err != nil {
-			return nil, err
-		}
-		if bot.debug {
-			log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
-		}
-		res, err := bot.client.SendRequest(req)
-		if err != nil {
-			return nil, err
-		}
-		if bot.debug {
-			log.Printf("response: %v", res.Status)
-			// response of POST request doesn't have rate-limit headers...
-			if res.HasRateLimit() {
-				log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+	in := make(chan []int64)
+	out := make(chan []*anaconda.Tweet)
+	go func() {
+		for m := 0; ; m += 100 {
+			// user ids length upto 100
+			n := m + 100
+			if n > len(ids) {
+				n = len(ids)
 			}
-		}
-		// decode to users
-		results := make([]anaconda.User, len(ids))
-		if err := json.NewDecoder(res.Body).Decode(&results); err != nil {
-			return nil, err
-		}
-		// append tweet if exist
-		for _, user := range results {
-			tweet := user.Status
-			if tweet != nil {
-				tweet.User = user
-				timeline = append(timeline, tweet)
+			if n-m < 1 {
+				break
 			}
+			in <- ids[m:n]
+		}
+		close(in)
+	}()
+
+	// parallelize request
+	// TODO: error handling
+	wg := sync.WaitGroup{}
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for ids := range in {
+				strIds := make([]string, len(ids))
+				for i, id := range ids {
+					strIds[i] = strconv.FormatInt(id, 10)
+				}
+				// GET(POST) users/lookup
+				query := url.Values{}
+				query.Set("user_id", strings.Join(strIds, ","))
+				body := query.Encode()
+				req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
+				req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+				if err != nil {
+					log.Fatal(err)
+				}
+				if bot.debug {
+					log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
+				}
+				res, err := bot.client.SendRequest(req)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if bot.debug {
+					log.Printf("response: %v", res.Status)
+					// response of POST request doesn't have rate-limit headers...
+					if res.HasRateLimit() {
+						log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+					}
+				}
+				// decode to users
+				users := make([]anaconda.User, len(ids))
+				if err := json.NewDecoder(res.Body).Decode(&users); err != nil {
+					log.Fatal(err)
+				}
+				// send results
+				var results []*anaconda.Tweet
+				for _, user := range users {
+					tweet := user.Status
+					if tweet != nil {
+						tweet.User = user
+						results = append(results, tweet)
+					}
+				}
+				out <- results
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	// collect all results
+Loop:
+	for {
+		select {
+		case results, ok := <-out:
+			if !ok {
+				break Loop
+			}
+			timeline = append(timeline, results...)
 		}
 	}
 	// sort by createdAt
