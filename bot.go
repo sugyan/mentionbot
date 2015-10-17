@@ -39,6 +39,13 @@ func (bot *Bot) Debug(enabled bool) {
 
 // FollowersTimeline returns followers timeline
 func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) {
+	defer func() {
+		// sort by createdAt
+		if timeline != nil {
+			sort.Sort(timeline)
+		}
+	}()
+
 	ids, err := bot.followersIDs(userID)
 	if err != nil {
 		return nil, err
@@ -46,8 +53,15 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 
 	// TODO: shuffle ids?
 
+	type result struct {
+		tweets []*anaconda.Tweet
+		err    error
+	}
+	cancel := make(chan struct{})
+	defer close(cancel)
+
 	in := make(chan []int64)
-	out := make(chan []*anaconda.Tweet)
+	out := make(chan result)
 	go func() {
 		for m := 0; ; m += 100 {
 			// user ids length upto 100
@@ -64,14 +78,9 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 	}()
 
 	// parallelize request
-	// TODO: error handling
-	wg := sync.WaitGroup{}
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			for ids := range in {
+	work := func() {
+		for ids := range in {
+			results, err := func() (results []*anaconda.Tweet, err error) {
 				strIds := make([]string, len(ids))
 				for i, id := range ids {
 					strIds[i] = strconv.FormatInt(id, 10)
@@ -83,14 +92,14 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 				req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
 				req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 				if err != nil {
-					log.Fatal(err)
+					return
 				}
 				if bot.debug {
 					log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
 				}
 				res, err := bot.client.SendRequest(req)
 				if err != nil {
-					log.Fatal(err)
+					return
 				}
 				if bot.debug {
 					log.Printf("response: %v", res.Status)
@@ -101,11 +110,10 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 				}
 				// decode to users
 				users := make([]anaconda.User, len(ids))
-				if err := json.NewDecoder(res.Body).Decode(&users); err != nil {
-					log.Fatal(err)
+				if err = json.NewDecoder(res.Body).Decode(&users); err != nil {
+					return
 				}
 				// send results
-				var results []*anaconda.Tweet
 				for _, user := range users {
 					tweet := user.Status
 					if tweet != nil {
@@ -113,8 +121,23 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 						results = append(results, tweet)
 					}
 				}
-				out <- results
+				return
+			}()
+			select {
+			case out <- result{tweets: results, err: err}:
+			case <-cancel:
+				return
 			}
+		}
+	}
+	// bounding the number of workers
+	const numWorkers = 5
+	wg := sync.WaitGroup{}
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			work()
 		}()
 	}
 	go func() {
@@ -126,15 +149,16 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 Loop:
 	for {
 		select {
-		case results, ok := <-out:
+		case result, ok := <-out:
 			if !ok {
 				break Loop
 			}
-			timeline = append(timeline, results...)
+			if result.err != nil {
+				return timeline, result.err
+			}
+			timeline = append(timeline, result.tweets...)
 		}
 	}
-	// sort by createdAt
-	sort.Sort(timeline)
 	return
 }
 
