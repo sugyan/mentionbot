@@ -2,6 +2,7 @@ package mentionbot
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/ChimeraCoder/anaconda"
 	"github.com/kurrik/oauth1a"
 	"github.com/kurrik/twittergo"
@@ -51,8 +52,6 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 		return nil, err
 	}
 
-	// TODO: shuffle ids?
-
 	type result struct {
 		tweets []*anaconda.Tweet
 		err    error
@@ -62,9 +61,10 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 
 	in := make(chan []int64)
 	out := make(chan result)
+	// input ids (user ids length upto 100)
+	// TODO: shuffle ids?
 	go func() {
 		for m := 0; ; m += 100 {
-			// user ids length upto 100
 			n := m + 100
 			if n > len(ids) {
 				n = len(ids)
@@ -76,75 +76,27 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 		}
 		close(in)
 	}()
-
-	// parallelize request
-	work := func() {
-		for ids := range in {
-			results, err := func() (results []*anaconda.Tweet, err error) {
-				strIds := make([]string, len(ids))
-				for i, id := range ids {
-					strIds[i] = strconv.FormatInt(id, 10)
-				}
-				// GET(POST) users/lookup
-				query := url.Values{}
-				query.Set("user_id", strings.Join(strIds, ","))
-				body := query.Encode()
-				req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
-				req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
-				if err != nil {
-					return
-				}
-				if bot.debug {
-					log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
-				}
-				res, err := bot.client.SendRequest(req)
-				if err != nil {
-					return
-				}
-				if bot.debug {
-					log.Printf("response: %v", res.Status)
-					// response of POST request doesn't have rate-limit headers...
-					if res.HasRateLimit() {
-						log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
-					}
-				}
-				// decode to users
-				users := make([]anaconda.User, len(ids))
-				if err = json.NewDecoder(res.Body).Decode(&users); err != nil {
-					return
-				}
-				// send results
-				for _, user := range users {
-					tweet := user.Status
-					if tweet != nil {
-						tweet.User = user
-						results = append(results, tweet)
-					}
-				}
-				return
-			}()
-			select {
-			case out <- result{tweets: results, err: err}:
-			case <-cancel:
-				return
-			}
-		}
-	}
-	// bounding the number of workers
+	// parallelize request (bounding the number of workers)
 	const numWorkers = 5
 	wg := sync.WaitGroup{}
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			work()
+			for ids := range in {
+				results, err := bot.usersLookup(ids)
+				select {
+				case out <- result{tweets: results, err: err}:
+				case <-cancel:
+					return
+				}
+			}
 		}()
 	}
 	go func() {
 		wg.Wait()
 		close(out)
 	}()
-
 	// collect all results
 Loop:
 	for {
@@ -157,6 +109,53 @@ Loop:
 				return timeline, result.err
 			}
 			timeline = append(timeline, result.tweets...)
+		}
+	}
+	return
+}
+
+func (bot *Bot) usersLookup(ids []int64) (results []*anaconda.Tweet, err error) {
+	if len(ids) > 100 {
+		return nil, errors.New("Too many ids!")
+	}
+	strIds := make([]string, len(ids))
+	for i, id := range ids {
+		strIds[i] = strconv.FormatInt(id, 10)
+	}
+	// GET(POST) users/lookup
+	query := url.Values{}
+	query.Set("user_id", strings.Join(strIds, ","))
+	body := query.Encode()
+	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
+	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+	if err != nil {
+		return
+	}
+	if bot.debug {
+		log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
+	}
+	res, err := bot.client.SendRequest(req)
+	if err != nil {
+		return
+	}
+	if bot.debug {
+		log.Printf("response: %v", res.Status)
+		// response of POST request doesn't have rate-limit headers...
+		if res.HasRateLimit() {
+			log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
+		}
+	}
+	// decode to users
+	users := make([]anaconda.User, len(ids))
+	if err = json.NewDecoder(res.Body).Decode(&users); err != nil {
+		return
+	}
+	// make results
+	for _, user := range users {
+		tweet := user.Status
+		if tweet != nil {
+			tweet.User = user
+			results = append(results, tweet)
 		}
 	}
 	return
