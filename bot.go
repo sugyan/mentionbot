@@ -129,14 +129,14 @@ func (bot *Bot) usersLookup(ids []int64) (results []*anaconda.Tweet, err error) 
 	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
 	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 	if err != nil {
-		return
+		return nil, err
 	}
 	if bot.debug {
 		log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
 	}
 	res, err := bot.client.SendRequest(req)
 	if err != nil {
-		return
+		return nil, err
 	}
 	if bot.debug {
 		log.Printf("response: %v", res.Status)
@@ -148,7 +148,7 @@ func (bot *Bot) usersLookup(ids []int64) (results []*anaconda.Tweet, err error) 
 	// decode to users
 	users := make([]anaconda.User, len(ids))
 	if err = json.NewDecoder(res.Body).Decode(&users); err != nil {
-		return
+		return nil, err
 	}
 	// make results
 	for _, user := range users {
@@ -190,8 +190,8 @@ func (bot *Bot) followersIDs(userID string) (ids []int64, err error) {
 		}
 
 		// decode to Cursor result
-		results := &anaconda.Cursor{}
-		if err = json.NewDecoder(res.Body).Decode(results); err != nil {
+		results := anaconda.Cursor{}
+		if err = json.NewDecoder(res.Body).Decode(&results); err != nil {
 			return nil, err
 		}
 		ids = append(ids, results.Ids...)
