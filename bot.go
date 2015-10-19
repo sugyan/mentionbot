@@ -1,34 +1,29 @@
 package mentionbot
 
 import (
-	"encoding/json"
-	"errors"
-	"github.com/ChimeraCoder/anaconda"
 	"github.com/kurrik/oauth1a"
 	"github.com/kurrik/twittergo"
 	"log"
-	"net/http"
-	"net/url"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 )
 
 // Bot type
 type Bot struct {
+	userID string
 	client *twittergo.Client
 	debug  bool
 }
 
 // NewBot returns new bot
-func NewBot(consumerKey string, consumerSecret string) *Bot {
+func NewBot(userID string, consumerKey string, consumerSecret string) *Bot {
 	clientConfig := &oauth1a.ClientConfig{
 		ConsumerKey:    consumerKey,
 		ConsumerSecret: consumerSecret,
 	}
 	client := twittergo.NewClient(clientConfig, nil)
 	return &Bot{
+		userID: userID,
 		client: client,
 	}
 }
@@ -38,8 +33,37 @@ func (bot *Bot) Debug(enabled bool) {
 	bot.debug = enabled
 }
 
-// FollowersTimeline returns followers timeline
-func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) {
+// Run bot
+func (bot *Bot) Run() error {
+	rateLimit, err := bot.rateLimitStatus([]string{"followers", "users"})
+	if err != nil {
+		return nil
+	}
+	if bot.debug {
+		followersIDs := rateLimit.Followers["/followers/ids"]
+		usersLookup := rateLimit.Users["/users/lookup"]
+		log.Printf("followers/ids: [%d/%d] (next: %v)", followersIDs.Remaining, followersIDs.Limit, followersIDs.ResetTime())
+		log.Printf("users/lookup: [%d/%d] (next: %v)", usersLookup.Remaining, usersLookup.Limit, usersLookup.ResetTime())
+	}
+
+	// get follwers tweets
+	timeline, err := bot.followersTimeline(bot.userID)
+	if err != nil {
+		return err
+	}
+	for _, tweet := range timeline {
+		if bot.debug {
+			createdAt, err := tweet.CreatedAtTime()
+			if err != nil {
+				return err
+			}
+			log.Printf("[%v](%s) @%s: %s", createdAt.Local(), tweet.IDStr, tweet.User.ScreenName, tweet.Text)
+		}
+	}
+	return nil
+}
+
+func (bot *Bot) followersTimeline(userID string) (timeline Timeline, err error) {
 	defer func() {
 		// sort by createdAt
 		if timeline != nil {
@@ -53,7 +77,7 @@ func (bot *Bot) FollowersTimeline(userID string) (timeline Timeline, err error) 
 	}
 
 	type result struct {
-		tweets []*anaconda.Tweet
+		tweets []*Tweet
 		err    error
 	}
 	cancel := make(chan struct{})
@@ -114,100 +138,8 @@ Loop:
 	return
 }
 
-func (bot *Bot) usersLookup(ids []int64) (results []*anaconda.Tweet, err error) {
-	if len(ids) > 100 {
-		return nil, errors.New("Too many ids!")
-	}
-	strIds := make([]string, len(ids))
-	for i, id := range ids {
-		strIds[i] = strconv.FormatInt(id, 10)
-	}
-	// GET(POST) users/lookup
-	query := url.Values{}
-	query.Set("user_id", strings.Join(strIds, ","))
-	body := query.Encode()
-	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
-	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
-	if err != nil {
-		return nil, err
-	}
-	if bot.debug {
-		log.Printf("request: %s %s (%s)", req.Method, req.URL, body)
-	}
-	res, err := bot.client.SendRequest(req)
-	if err != nil {
-		return nil, err
-	}
-	if bot.debug {
-		log.Printf("response: %v", res.Status)
-		// response of POST request doesn't have rate-limit headers...
-		if res.HasRateLimit() {
-			log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
-		}
-	}
-	// decode to users
-	users := make([]anaconda.User, len(ids))
-	if err = json.NewDecoder(res.Body).Decode(&users); err != nil {
-		return nil, err
-	}
-	// make results
-	for _, user := range users {
-		tweet := user.Status
-		if tweet != nil {
-			tweet.User = user
-			results = append(results, tweet)
-		}
-	}
-	return
-}
-
-func (bot *Bot) followersIDs(userID string) (ids []int64, err error) {
-	var cursor string
-	for {
-		// GET followers/ids
-		query := url.Values{}
-		query.Set("user_id", userID)
-		query.Set("count", "5000")
-		if cursor != "" {
-			query.Set("cursor", cursor)
-		}
-		req, err := http.NewRequest("GET", "/1.1/followers/ids.json?"+query.Encode(), nil)
-		if err != nil {
-			return nil, err
-		}
-		if bot.debug {
-			log.Printf("request: %s %s", req.Method, req.URL)
-		}
-		res, err := bot.client.SendRequest(req)
-		if err != nil {
-			return nil, err
-		}
-		if bot.debug {
-			log.Printf("response: %s", res.Status)
-			if res.HasRateLimit() {
-				log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
-			}
-		}
-
-		// decode to Cursor result
-		results := anaconda.Cursor{}
-		if err = json.NewDecoder(res.Body).Decode(&results); err != nil {
-			return nil, err
-		}
-		ids = append(ids, results.Ids...)
-
-		// next loop?
-		if results.Next_cursor_str == "0" {
-			break
-		} else {
-			cursor = results.Next_cursor_str
-		}
-	}
-	return
-}
-
 // Timeline is array of tweet which can sort by createdAt
-type Timeline []*anaconda.Tweet
+type Timeline []*Tweet
 
 func (t Timeline) Len() int {
 	return len(t)
