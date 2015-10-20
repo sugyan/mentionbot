@@ -10,18 +10,20 @@ import (
 
 // Bot type
 type Bot struct {
-	userID string
-	client *twittergo.Client
-	debug  bool
+	userID   string
+	client   *twittergo.Client
+	reaction func(*Tweet) *string
+	debug    bool
 }
 
 // NewBot returns new bot
-func NewBot(userID string, consumerKey string, consumerSecret string) *Bot {
+func NewBot(userID string, consumerKey string, consumerSecret string, accessToken string, accessTokenSecret string) *Bot {
 	clientConfig := &oauth1a.ClientConfig{
 		ConsumerKey:    consumerKey,
 		ConsumerSecret: consumerSecret,
 	}
-	client := twittergo.NewClient(clientConfig, nil)
+	userConfig := oauth1a.NewAuthorizedConfig(accessToken, accessTokenSecret)
+	client := twittergo.NewClient(clientConfig, userConfig)
 	return &Bot{
 		userID: userID,
 		client: client,
@@ -33,11 +35,19 @@ func (bot *Bot) Debug(enabled bool) {
 	bot.debug = enabled
 }
 
+// SetReaction sets reaction logic
+func (bot *Bot) SetReaction(f func(*Tweet) *string) {
+	bot.reaction = f
+}
+
+func (bot *Bot) SetUser(accessToken string, accessTokenSecret string) {
+}
+
 // Run bot
-func (bot *Bot) Run() error {
+func (bot *Bot) Run() (err error) {
 	rateLimit, err := bot.rateLimitStatus([]string{"followers", "users"})
 	if err != nil {
-		return nil
+		return err
 	}
 	if bot.debug {
 		followersIDs := rateLimit.Followers["/followers/ids"]
@@ -52,15 +62,23 @@ func (bot *Bot) Run() error {
 		return err
 	}
 	for _, tweet := range timeline {
-		if bot.debug {
+		if bot.reaction != nil {
+			mention := bot.reaction(tweet)
+			if mention == nil {
+				continue
+			}
 			createdAt, err := tweet.CreatedAtTime()
 			if err != nil {
 				return err
 			}
-			log.Printf("[%v](%s) @%s: %s", createdAt.Local(), tweet.IDStr, tweet.User.ScreenName, tweet.Text)
+			if bot.debug {
+				log.Printf("(%s)[%v] @%s: %s", tweet.IDStr, createdAt.Local(), tweet.User.ScreenName, tweet.Text)
+			}
+			// TODO reply tweet
+			log.Println(*mention)
 		}
 	}
-	return nil
+	return
 }
 
 func (bot *Bot) followersTimeline(userID string) (timeline Timeline, err error) {
