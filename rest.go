@@ -108,7 +108,8 @@ func (bot *Bot) request(req *http.Request, data interface{}) (err error) {
 			Remaining: res.RateLimitRemaining(),
 			Reset:     res.RateLimitReset().Unix(),
 		}
-		if rateLimitStatus.Remaining < bot.rateLimit[req.URL.Path].Remaining {
+		if (rateLimitStatus.Reset > bot.rateLimit[req.URL.Path].Reset) ||
+			(rateLimitStatus.Remaining < bot.rateLimit[req.URL.Path].Remaining) {
 			bot.rateLimit[req.URL.Path] = rateLimitStatus
 		}
 	}

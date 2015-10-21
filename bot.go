@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"time"
 )
 
 // Bot type
@@ -48,46 +49,72 @@ func (bot *Bot) Run() (err error) {
 		APIFollowersIds = "/1.1/followers/ids.json"
 		APIUsersLookup  = "/1.1/users/lookup.json"
 	)
+	var (
+		latestRateLimit = make(map[string]RateLimitStatus)
+		latestCreatedAt = time.Now().Add(-time.Minute * 10)
+	)
+
 	rateLimit, err := bot.rateLimitStatus([]string{"followers", "users"})
 	if err != nil {
 		return err
 	}
-	bot.rateLimit[APIFollowersIds] = rateLimit.Followers["/followers/ids"]
-	bot.rateLimit[APIUsersLookup] = rateLimit.Users["/users/lookup"]
-	latestRateLimit := make(map[string]RateLimitStatus)
-	for k, v := range bot.rateLimit {
-		latestRateLimit[k] = v
-	}
+	latestRateLimit[APIFollowersIds] = rateLimit.Followers["/followers/ids"]
+	latestRateLimit[APIUsersLookup] = rateLimit.Users["/users/lookup"]
 
-	// get follwers tweets
-	timeline, err := bot.followersTimeline(bot.userID)
-	if err != nil {
-		return err
-	}
-	if bot.debug {
-		log.Printf("%d tweets fetched", len(timeline))
-	}
-	for _, tweet := range timeline {
-		if bot.reaction != nil {
-			mention := bot.reaction(tweet)
-			if mention == nil {
-				continue
-			}
+	for {
+		// get follwers tweets
+		timeline, err := bot.followersTimeline(bot.userID)
+		if err != nil {
+			return err
+		}
+		if bot.debug {
+			log.Printf("%d tweets fetched", len(timeline))
+		}
+		for _, tweet := range timeline {
 			createdAt, err := tweet.CreatedAtTime()
 			if err != nil {
 				return err
 			}
-			if bot.debug {
-				log.Printf("(%s)[%v] @%s: %s", tweet.IDStr, createdAt.Local(), tweet.User.ScreenName, tweet.Text)
+			if createdAt.Before(latestCreatedAt) || createdAt.Equal(latestCreatedAt) {
+				continue
 			}
-			// TODO reply tweet
-			log.Println(*mention)
+			if bot.reaction != nil {
+				mention := bot.reaction(tweet)
+				if mention == nil {
+					continue
+				}
+				if bot.debug {
+					log.Printf("(%s)[%v] @%s: %s", tweet.IDStr, createdAt.Local(), tweet.User.ScreenName, tweet.Text)
+				}
+				// TODO reply tweet
+				log.Println(*mention)
+			}
 		}
+		if latestCreatedAt, err = timeline[len(timeline)-1].CreatedAtTime(); err != nil {
+			return err
+		}
+
+		var maxWait int64 = 10
+		for _, api := range []string{APIFollowersIds, APIUsersLookup} {
+			log.Printf("%s: (%d -> %d) / %d", api, latestRateLimit[api].Remaining, bot.rateLimit[api].Remaining, bot.rateLimit[api].Limit)
+			if diff := int(latestRateLimit[api].Remaining) - int(bot.rateLimit[api].Remaining); diff > 0 {
+				now := time.Now()
+				num := int(bot.rateLimit[api].Remaining) / diff
+				if num == 0 {
+					num++
+				}
+				wait := (bot.rateLimit[api].Reset - now.Unix()) / int64(num)
+				if wait > maxWait {
+					maxWait = wait
+				}
+			}
+			latestRateLimit[api] = bot.rateLimit[api]
+		}
+		if bot.debug {
+			log.Printf("wait %d seconds for next loop", maxWait)
+		}
+		<-time.Tick(time.Second * time.Duration(maxWait))
 	}
-	for _, api := range []string{APIFollowersIds, APIUsersLookup} {
-		log.Printf("%s: %d - %d", api, latestRateLimit[api].Remaining, bot.rateLimit[api].Remaining)
-	}
-	return
 }
 
 func (bot *Bot) followersTimeline(userID string) (timeline Timeline, err error) {
