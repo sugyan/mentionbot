@@ -85,9 +85,9 @@ type RateLimitStatusResources struct {
 
 // RateLimitStatus type
 type RateLimitStatus struct {
-	Limit     int   `json:"limit"`
-	Remaining int   `json:"remaining"`
-	Reset     int64 `json:"reset"`
+	Limit     uint32 `json:"limit"`
+	Remaining uint32 `json:"remaining"`
+	Reset     int64  `json:"reset"`
 }
 
 // ResetTime returns reset time

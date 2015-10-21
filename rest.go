@@ -96,14 +96,21 @@ func (bot *Bot) request(req *http.Request, data interface{}) (err error) {
 	if err != nil {
 		return err
 	}
-	if bot.debug {
-		log.Printf("response: %s", res.Status)
-		if res.HasRateLimit() {
-			log.Printf("rate limit: %d / %d (reset at %v)", res.RateLimitRemaining(), res.RateLimit(), res.RateLimitReset())
-		}
-	}
 	if res.StatusCode != 200 {
+		if bot.debug {
+			log.Printf("response: %s", res.Status)
+		}
 		return errors.New(res.Status)
+	}
+	if res.HasRateLimit() {
+		rateLimitStatus := RateLimitStatus{
+			Limit:     res.RateLimit(),
+			Remaining: res.RateLimitRemaining(),
+			Reset:     res.RateLimitReset().Unix(),
+		}
+		if rateLimitStatus.Remaining < bot.rateLimit[req.URL.Path].Remaining {
+			bot.rateLimit[req.URL.Path] = rateLimitStatus
+		}
 	}
 	if err = json.NewDecoder(res.Body).Decode(&data); err != nil {
 		return err

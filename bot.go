@@ -10,10 +10,11 @@ import (
 
 // Bot type
 type Bot struct {
-	userID   string
-	client   *twittergo.Client
-	reaction func(*Tweet) *string
-	debug    bool
+	userID    string
+	client    *twittergo.Client
+	reaction  func(*Tweet) *string
+	rateLimit map[string]RateLimitStatus
+	debug     bool
 }
 
 // NewBot returns new bot
@@ -25,8 +26,9 @@ func NewBot(userID string, consumerKey string, consumerSecret string, accessToke
 	userConfig := oauth1a.NewAuthorizedConfig(accessToken, accessTokenSecret)
 	client := twittergo.NewClient(clientConfig, userConfig)
 	return &Bot{
-		userID: userID,
-		client: client,
+		userID:    userID,
+		client:    client,
+		rateLimit: make(map[string]RateLimitStatus),
 	}
 }
 
@@ -40,26 +42,30 @@ func (bot *Bot) SetReaction(f func(*Tweet) *string) {
 	bot.reaction = f
 }
 
-func (bot *Bot) SetUser(accessToken string, accessTokenSecret string) {
-}
-
 // Run bot
 func (bot *Bot) Run() (err error) {
+	const (
+		APIFollowersIds = "/1.1/followers/ids.json"
+		APIUsersLookup  = "/1.1/users/lookup.json"
+	)
 	rateLimit, err := bot.rateLimitStatus([]string{"followers", "users"})
 	if err != nil {
 		return err
 	}
-	if bot.debug {
-		followersIDs := rateLimit.Followers["/followers/ids"]
-		usersLookup := rateLimit.Users["/users/lookup"]
-		log.Printf("followers/ids: [%d/%d] (next: %v)", followersIDs.Remaining, followersIDs.Limit, followersIDs.ResetTime())
-		log.Printf("users/lookup: [%d/%d] (next: %v)", usersLookup.Remaining, usersLookup.Limit, usersLookup.ResetTime())
+	bot.rateLimit[APIFollowersIds] = rateLimit.Followers["/followers/ids"]
+	bot.rateLimit[APIUsersLookup] = rateLimit.Users["/users/lookup"]
+	latestRateLimit := make(map[string]RateLimitStatus)
+	for k, v := range bot.rateLimit {
+		latestRateLimit[k] = v
 	}
 
 	// get follwers tweets
 	timeline, err := bot.followersTimeline(bot.userID)
 	if err != nil {
 		return err
+	}
+	if bot.debug {
+		log.Printf("%d tweets fetched", len(timeline))
 	}
 	for _, tweet := range timeline {
 		if bot.reaction != nil {
@@ -77,6 +83,9 @@ func (bot *Bot) Run() (err error) {
 			// TODO reply tweet
 			log.Println(*mention)
 		}
+	}
+	for _, api := range []string{APIFollowersIds, APIUsersLookup} {
+		log.Printf("%s: %d - %d", api, latestRateLimit[api].Remaining, bot.rateLimit[api].Remaining)
 	}
 	return
 }
