@@ -9,12 +9,17 @@ import (
 	"time"
 )
 
+// Mentioner interface
+type Mentioner interface {
+	Mention(*Tweet) *string
+}
+
 // Bot type
 type Bot struct {
 	userID    string
 	client    *twittergo.Client
-	reaction  func(*Tweet) *string
 	rateLimit map[string]RateLimitStatus
+	mentioner Mentioner
 	debug     bool
 }
 
@@ -38,9 +43,9 @@ func (bot *Bot) Debug(enabled bool) {
 	bot.debug = enabled
 }
 
-// SetReaction sets reaction logic
-func (bot *Bot) SetReaction(f func(*Tweet) *string) {
-	bot.reaction = f
+// SetMentioner sets mentioner instance
+func (bot *Bot) SetMentioner(m Mentioner) {
+	bot.mentioner = m
 }
 
 // Run bot
@@ -78,8 +83,8 @@ func (bot *Bot) Run() (err error) {
 			if createdAt.Before(latestCreatedAt) || createdAt.Equal(latestCreatedAt) {
 				continue
 			}
-			if bot.reaction != nil {
-				mention := bot.reaction(tweet)
+			if bot.mentioner != nil {
+				mention := bot.mentioner.Mention(tweet)
 				if mention == nil {
 					continue
 				}
