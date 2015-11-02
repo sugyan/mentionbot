@@ -33,14 +33,24 @@ func (bot *Bot) usersLookup(ids []int64) (results []*Tweet, err error) {
 	for _, user := range users {
 		tweet := user.Status
 		if tweet != nil {
-			tweet.User = user
-			results = append(results, tweet)
+			createdAtTime, err := tweet.CreatedAtTime()
+			if err != nil {
+				return nil, err
+			}
+			if createdAtTime.After(bot.latestCreatedAt) {
+				tweet.User = user
+				results = append(results, tweet)
+			}
 		}
 	}
 	return
 }
 
 func (bot *Bot) followersIDs(userID string) (ids []int64, err error) {
+	// cache 15 minutes
+	if ids = bot.idsCache.GetIds(); ids != nil {
+		return
+	}
 	var cursor string
 	for {
 		// GET followers/ids
@@ -69,6 +79,7 @@ func (bot *Bot) followersIDs(userID string) (ids []int64, err error) {
 			cursor = results.NextCursorStr
 		}
 	}
+	bot.idsCache.SetIds(ids)
 	return
 }
 
@@ -102,15 +113,15 @@ func (bot *Bot) request(req *http.Request, data interface{}) (err error) {
 		}
 		return errors.New(res.Status)
 	}
-	if res.HasRateLimit() {
+	if req.URL.Path == "/1.1/users/lookup.json" && res.HasRateLimit() {
 		rateLimitStatus := RateLimitStatus{
 			Limit:     res.RateLimit(),
 			Remaining: res.RateLimitRemaining(),
 			Reset:     res.RateLimitReset().Unix(),
 		}
-		if (rateLimitStatus.Reset > bot.rateLimit[req.URL.Path].Reset) ||
-			(rateLimitStatus.Remaining < bot.rateLimit[req.URL.Path].Remaining) {
-			bot.rateLimit[req.URL.Path] = rateLimitStatus
+		if (rateLimitStatus.Reset > bot.rateLimit.Reset) ||
+			(rateLimitStatus.Remaining < bot.rateLimit.Remaining) {
+			bot.rateLimit = rateLimitStatus
 		}
 	}
 	if err = json.NewDecoder(res.Body).Decode(&data); err != nil {

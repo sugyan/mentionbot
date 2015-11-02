@@ -16,11 +16,13 @@ type Mentioner interface {
 
 // Bot type
 type Bot struct {
-	userID    string
-	client    *twittergo.Client
-	rateLimit map[string]RateLimitStatus
-	mentioner Mentioner
-	debug     bool
+	userID          string
+	client          *twittergo.Client
+	rateLimit       RateLimitStatus
+	mentioner       Mentioner
+	idsCache        idsCache
+	latestCreatedAt time.Time
+	debug           bool
 }
 
 // NewBot returns new bot
@@ -32,9 +34,10 @@ func NewBot(userID string, consumerKey string, consumerSecret string, accessToke
 	userConfig := oauth1a.NewAuthorizedConfig(accessToken, accessTokenSecret)
 	client := twittergo.NewClient(clientConfig, userConfig)
 	return &Bot{
-		userID:    userID,
-		client:    client,
-		rateLimit: make(map[string]RateLimitStatus),
+		userID:          userID,
+		client:          client,
+		idsCache:        idsCache{},
+		latestCreatedAt: time.Now().Add(-time.Minute * 10),
 	}
 }
 
@@ -50,21 +53,11 @@ func (bot *Bot) SetMentioner(m Mentioner) {
 
 // Run bot
 func (bot *Bot) Run() (err error) {
-	const (
-		APIFollowersIds = "/1.1/followers/ids.json"
-		APIUsersLookup  = "/1.1/users/lookup.json"
-	)
-	var (
-		latestRateLimit = make(map[string]RateLimitStatus)
-		latestCreatedAt = time.Now().Add(-time.Minute * 10)
-	)
-
-	rateLimit, err := bot.rateLimitStatus([]string{"followers", "users"})
+	rateLimit, err := bot.rateLimitStatus([]string{"users"})
 	if err != nil {
 		return err
 	}
-	latestRateLimit[APIFollowersIds] = rateLimit.Followers["/followers/ids"]
-	latestRateLimit[APIUsersLookup] = rateLimit.Users["/users/lookup"]
+	latestRateLimit := rateLimit.Users["/users/lookup"]
 
 	for {
 		// get follwers tweets
@@ -72,6 +65,7 @@ func (bot *Bot) Run() (err error) {
 		if err != nil {
 			return err
 		}
+
 		if bot.debug {
 			log.Printf("%d tweets fetched", len(timeline))
 		}
@@ -79,9 +73,6 @@ func (bot *Bot) Run() (err error) {
 			createdAt, err := tweet.CreatedAtTime()
 			if err != nil {
 				return err
-			}
-			if createdAt.Before(latestCreatedAt) || createdAt.Equal(latestCreatedAt) {
-				continue
 			}
 			if bot.mentioner != nil {
 				mention := bot.mentioner.Mention(tweet)
@@ -95,26 +86,31 @@ func (bot *Bot) Run() (err error) {
 				log.Println(*mention)
 			}
 		}
-		if latestCreatedAt, err = timeline[len(timeline)-1].CreatedAtTime(); err != nil {
-			return err
+		// udpate latestCreatedAt
+		if len(timeline) > 0 {
+			bot.latestCreatedAt, err = timeline[len(timeline)-1].CreatedAtTime()
+			if err != nil {
+				return err
+			}
 		}
 
-		var maxWait int64 = 10
-		for _, api := range []string{APIFollowersIds, APIUsersLookup} {
-			log.Printf("%s: (%d -> %d) / %d", api, latestRateLimit[api].Remaining, bot.rateLimit[api].Remaining, bot.rateLimit[api].Limit)
-			if diff := int(latestRateLimit[api].Remaining) - int(bot.rateLimit[api].Remaining); diff > 0 {
-				now := time.Now()
-				num := int(bot.rateLimit[api].Remaining) / diff
-				if num == 0 {
-					num++
-				}
-				wait := (bot.rateLimit[api].Reset - now.Unix()) / int64(num)
-				if wait > maxWait {
-					maxWait = wait
-				}
-			}
-			latestRateLimit[api] = bot.rateLimit[api]
+		// calculate waiting time
+		if bot.debug {
+			log.Printf("rate limit: (%d -> %d) / %d", latestRateLimit.Remaining, bot.rateLimit.Remaining, bot.rateLimit.Limit)
 		}
+		var maxWait int64 = 10
+		if diff := int(latestRateLimit.Remaining) - int(bot.rateLimit.Remaining); diff > 0 {
+			num := int(bot.rateLimit.Remaining) / diff
+			if num == 0 {
+				num++
+			}
+			wait := (bot.rateLimit.Reset - time.Now().Unix()) / int64(num)
+			if wait > maxWait {
+				maxWait = wait
+			}
+		}
+		latestRateLimit = bot.rateLimit
+
 		if bot.debug {
 			log.Printf("wait %d seconds for next loop", maxWait)
 		}
