@@ -79,7 +79,7 @@ func (bot *Bot) followersIDs(userID string) (ids []int64, err error) {
 			cursor = results.NextCursorStr
 		}
 	}
-	bot.idsCache.SetIds(ids)
+	bot.idsCache.SetIds(ids, 0)
 	return
 }
 
