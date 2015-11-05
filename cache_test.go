@@ -8,7 +8,7 @@ import (
 func TestCache(t *testing.T) {
 	var ids []int64
 	cache := idsCache{}
-	cache.SetIds([]int64{100, 200}, 500*time.Millisecond)
+	cache.SetIds([]int64{100, 200}, 100*time.Millisecond)
 
 	ids = cache.GetIds()
 	if ids == nil {
@@ -21,7 +21,7 @@ func TestCache(t *testing.T) {
 		}
 	}
 
-	<-time.After(time.Second)
+	<-time.After(200 * time.Millisecond)
 	ids = cache.GetIds()
 	if ids != nil {
 		t.Fail()
