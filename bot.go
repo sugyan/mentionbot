@@ -53,11 +53,11 @@ func (bot *Bot) SetMentioner(m Mentioner) {
 
 // Run bot
 func (bot *Bot) Run() (err error) {
-	rateLimit, err := bot.rateLimitStatus([]string{"users"})
+	rateLimitResult, err := bot.rateLimitStatus([]string{"users"})
 	if err != nil {
 		return err
 	}
-	latestRateLimit := rateLimit.Users["/users/lookup"]
+	latestRateLimit := rateLimitResult.results.(RateLimitStatusResources).Users["/users/lookup"]
 
 	for {
 		// get follwers tweets
@@ -126,14 +126,15 @@ func (bot *Bot) followersTimeline(userID string) (timeline Timeline, err error) 
 		}
 	}()
 
-	ids, err := bot.followersIDs(userID)
+	idsResults, err := bot.followersIDs(userID)
 	if err != nil {
 		return nil, err
 	}
+	ids := idsResults.results.([]int64)
 
 	type result struct {
-		tweets []*Tweet
-		err    error
+		apiResult *apiResult
+		err       error
 	}
 	cancel := make(chan struct{})
 	defer close(cancel)
@@ -165,7 +166,7 @@ func (bot *Bot) followersTimeline(userID string) (timeline Timeline, err error) 
 			for ids := range in {
 				results, err := bot.usersLookup(ids)
 				select {
-				case out <- result{tweets: results, err: err}:
+				case out <- result{apiResult: results, err: err}:
 				case <-cancel:
 					return
 				}
@@ -187,7 +188,8 @@ Loop:
 			if result.err != nil {
 				return timeline, result.err
 			}
-			timeline = append(timeline, result.tweets...)
+			apiResult := result.apiResult
+			timeline = append(timeline, apiResult.results.([]*Tweet)...)
 		}
 	}
 	return
