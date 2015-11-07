@@ -69,7 +69,7 @@ func mockServer() *httptest.Server {
 }
 
 func TestRateLimitStatus(t *testing.T) {
-	bot := NewBot("", "", "", "", "")
+	bot := NewBot(&Config{})
 	{
 		server := mockServer()
 		defer server.Close()
@@ -107,7 +107,7 @@ func TestRateLimitStatus(t *testing.T) {
 }
 
 func TestFollowersTimeline(t *testing.T) {
-	bot := NewBot("", "", "", "", "")
+	bot := NewBot(&Config{})
 	{
 		server := mockServer()
 		defer server.Close()

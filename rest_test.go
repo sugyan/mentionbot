@@ -11,7 +11,7 @@ import (
 )
 
 func TestRequest(t *testing.T) {
-	bot := NewBot("", "", "", "", "")
+	bot := NewBot(&Config{})
 	{
 		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("X-Rate-Limit-Limit", "15")

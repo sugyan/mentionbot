@@ -24,16 +24,26 @@ type Bot struct {
 	debug     bool
 }
 
+// Config type
+type Config struct {
+	UserID            string
+	ConsumerKey       string
+	ConsumerSecret    string
+	AccessToken       string
+	AccessTokenSecret string
+}
+
 // NewBot returns new bot
-func NewBot(userID string, consumerKey string, consumerSecret string, accessToken string, accessTokenSecret string) *Bot {
-	clientConfig := &oauth1a.ClientConfig{
-		ConsumerKey:    consumerKey,
-		ConsumerSecret: consumerSecret,
-	}
-	userConfig := oauth1a.NewAuthorizedConfig(accessToken, accessTokenSecret)
-	client := twittergo.NewClient(clientConfig, userConfig)
+func NewBot(config *Config) *Bot {
+	client := twittergo.NewClient(&oauth1a.ClientConfig{
+		ConsumerKey:    config.ConsumerKey,
+		ConsumerSecret: config.ConsumerSecret,
+	}, &oauth1a.UserConfig{
+		AccessTokenKey:    config.AccessToken,
+		AccessTokenSecret: config.AccessTokenSecret,
+	})
 	return &Bot{
-		userID:   userID,
+		userID:   config.UserID,
 		client:   client,
 		idsCache: idsCache{},
 	}
