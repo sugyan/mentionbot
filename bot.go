@@ -16,13 +16,12 @@ type Mentioner interface {
 
 // Bot type
 type Bot struct {
-	userID          string
-	client          *twittergo.Client
-	rateLimit       RateLimitStatus
-	mentioner       Mentioner
-	idsCache        idsCache
-	latestCreatedAt time.Time
-	debug           bool
+	userID    string
+	client    *twittergo.Client
+	rateLimit RateLimitStatus
+	mentioner Mentioner
+	idsCache  idsCache
+	debug     bool
 }
 
 // NewBot returns new bot
@@ -34,10 +33,9 @@ func NewBot(userID string, consumerKey string, consumerSecret string, accessToke
 	userConfig := oauth1a.NewAuthorizedConfig(accessToken, accessTokenSecret)
 	client := twittergo.NewClient(clientConfig, userConfig)
 	return &Bot{
-		userID:          userID,
-		client:          client,
-		idsCache:        idsCache{},
-		latestCreatedAt: time.Now().Add(-time.Minute * 10),
+		userID:   userID,
+		client:   client,
+		idsCache: idsCache{},
 	}
 }
 
@@ -58,10 +56,11 @@ func (bot *Bot) Run() (err error) {
 		return err
 	}
 	latestRateLimit := rateLimitResult.results.(RateLimitStatusResources).Users["/users/lookup"]
+	latestCreatedAt := time.Now().Add(-15 * time.Minute)
 
 	for {
 		// get follwers tweets
-		timeline, err := bot.followersTimeline(bot.userID)
+		timeline, err := bot.followersTimeline(bot.userID, latestCreatedAt)
 		if err != nil {
 			return err
 		}
@@ -88,7 +87,7 @@ func (bot *Bot) Run() (err error) {
 		}
 		// udpate latestCreatedAt
 		if len(timeline) > 0 {
-			bot.latestCreatedAt, err = timeline[len(timeline)-1].CreatedAtTime()
+			latestCreatedAt, err = timeline[len(timeline)-1].CreatedAtTime()
 			if err != nil {
 				return err
 			}
@@ -118,7 +117,7 @@ func (bot *Bot) Run() (err error) {
 	}
 }
 
-func (bot *Bot) followersTimeline(userID string) (timeline Timeline, err error) {
+func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Timeline, err error) {
 	defer func() {
 		// sort by createdAt
 		if timeline != nil {
@@ -189,7 +188,20 @@ Loop:
 				return timeline, result.err
 			}
 			apiResult := result.apiResult
-			timeline = append(timeline, apiResult.results.([]*Tweet)...)
+			// make results
+			for _, user := range apiResult.results.([]User) {
+				tweet := user.Status
+				if tweet != nil {
+					createdAtTime, err := tweet.CreatedAtTime()
+					if err != nil {
+						return nil, err
+					}
+					if createdAtTime.After(since) {
+						tweet.User = user
+						timeline = append(timeline, tweet)
+					}
+				}
+			}
 		}
 	}
 	return
@@ -203,6 +215,7 @@ func (t Timeline) Len() int {
 }
 
 func (t Timeline) Less(i, j int) bool {
+	// ignore parse error
 	t1, _ := t[i].CreatedAtTime()
 	t2, _ := t[j].CreatedAtTime()
 	return t1.Before(t2)

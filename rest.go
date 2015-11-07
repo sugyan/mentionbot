@@ -36,25 +36,8 @@ func (bot *Bot) usersLookup(ids []int64) (*apiResult, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: move this
-	// make results
-	var tweets []*Tweet
-	for _, user := range users {
-		tweet := user.Status
-		if tweet != nil {
-			// createdAtTime, err := tweet.CreatedAtTime()
-			// if err != nil {
-			// 	return nil, err
-			// }
-			// if createdAtTime.After(bot.latestCreatedAt) {
-			tweet.User = user
-			tweets = append(tweets, tweet)
-			// }
-		}
-	}
 	return &apiResult{
-		results:   tweets,
+		results:   users,
 		rateLimit: rateLimit,
 	}, nil
 }
