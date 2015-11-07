@@ -128,17 +128,6 @@ func (bot *Bot) request(req *http.Request, data interface{}) (rateLimit *RateLim
 			Reset:     res.RateLimitReset().Unix(),
 		}
 	}
-	// if req.URL.Path == "/1.1/users/lookup.json" && res.HasRateLimit() {
-	// 	rateLimitStatus := RateLimitStatus{
-	// 		Limit:     res.RateLimit(),
-	// 		Remaining: res.RateLimitRemaining(),
-	// 		Reset:     res.RateLimitReset().Unix(),
-	// 	}
-	// 	if (rateLimitStatus.Reset > bot.rateLimit.Reset) ||
-	// 		(rateLimitStatus.Remaining < bot.rateLimit.Remaining) {
-	// 		bot.rateLimit = rateLimitStatus
-	// 	}
-	// }
 	if err = json.NewDecoder(res.Body).Decode(&data); err != nil {
 		return
 	}

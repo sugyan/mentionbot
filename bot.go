@@ -18,7 +18,6 @@ type Mentioner interface {
 type Bot struct {
 	userID    string
 	client    *twittergo.Client
-	rateLimit RateLimitStatus
 	mentioner Mentioner
 	idsCache  idsCache
 	debug     bool
@@ -70,7 +69,7 @@ func (bot *Bot) Run() (err error) {
 
 	for {
 		// get follwers tweets
-		timeline, err := bot.followersTimeline(bot.userID, latestCreatedAt)
+		timeline, rateLimit, err := bot.followersTimeline(bot.userID, latestCreatedAt)
 		if err != nil {
 			return err
 		}
@@ -105,20 +104,20 @@ func (bot *Bot) Run() (err error) {
 
 		// calculate waiting time
 		if bot.debug {
-			log.Printf("rate limit: (%d -> %d) / %d", latestRateLimit.Remaining, bot.rateLimit.Remaining, bot.rateLimit.Limit)
+			log.Printf("rate limit: (%d -> %d) / %d", latestRateLimit.Remaining, rateLimit.Remaining, rateLimit.Limit)
 		}
 		var maxWait int64 = 10
-		if diff := int(latestRateLimit.Remaining) - int(bot.rateLimit.Remaining); diff > 0 {
-			num := int(bot.rateLimit.Remaining) / diff
+		if diff := int(latestRateLimit.Remaining) - int(rateLimit.Remaining); diff > 0 {
+			num := int(rateLimit.Remaining) / diff
 			if num == 0 {
 				num++
 			}
-			wait := (bot.rateLimit.Reset - time.Now().Unix()) / int64(num)
+			wait := (rateLimit.Reset - time.Now().Unix()) / int64(num)
 			if wait > maxWait {
 				maxWait = wait
 			}
 		}
-		latestRateLimit = bot.rateLimit
+		latestRateLimit = *rateLimit
 
 		if bot.debug {
 			log.Printf("wait %d seconds for next loop", maxWait)
@@ -127,7 +126,7 @@ func (bot *Bot) Run() (err error) {
 	}
 }
 
-func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Timeline, err error) {
+func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Timeline, rateLimit *RateLimitStatus, err error) {
 	defer func() {
 		// sort by createdAt
 		if timeline != nil {
@@ -137,7 +136,7 @@ func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Time
 
 	idsResults, err := bot.followersIDs(userID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ids := idsResults.results.([]int64)
 
@@ -187,6 +186,7 @@ func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Time
 		close(out)
 	}()
 	// collect all results
+	rateLimit = &RateLimitStatus{}
 Loop:
 	for {
 		select {
@@ -195,16 +195,21 @@ Loop:
 				break Loop
 			}
 			if result.err != nil {
-				return timeline, result.err
+				return nil, nil, result.err
 			}
 			apiResult := result.apiResult
+			if apiResult.rateLimit != nil {
+				if (apiResult.rateLimit.Reset > rateLimit.Reset) || (apiResult.rateLimit.Remaining < rateLimit.Remaining) {
+					rateLimit = apiResult.rateLimit
+				}
+			}
 			// make results
 			for _, user := range apiResult.results.([]User) {
 				tweet := user.Status
 				if tweet != nil {
 					createdAtTime, err := tweet.CreatedAtTime()
 					if err != nil {
-						return nil, err
+						return nil, nil, err
 					}
 					if createdAtTime.After(since) {
 						tweet.User = user

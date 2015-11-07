@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -64,6 +65,9 @@ func mockServer() *httptest.Server {
 		if err != nil {
 			log.Fatal(err)
 		}
+		w.Header().Add("X-Rate-Limit-Limit", "10")
+		w.Header().Add("X-Rate-Limit-Remaining", "15")
+		w.Header().Add("X-Rate-Limit-Reset", strconv.FormatInt(time.Now().Add(15*time.Minute).Unix(), 10))
 		w.Write(bytes)
 	}))
 }
@@ -102,7 +106,7 @@ func TestRateLimitStatus(t *testing.T) {
 		t.Error("limit must be 180")
 	}
 	if rateLimit.Reset <= time.Now().Unix() {
-		t.Error("reset time too old")
+		t.Error("reset time is too old")
 	}
 }
 
@@ -122,7 +126,7 @@ func TestFollowersTimeline(t *testing.T) {
 		}
 	}
 
-	timeline, err := bot.followersTimeline("dummy", time.Now().Add(-6*time.Minute))
+	timeline, rateLimit, err := bot.followersTimeline("dummy", time.Now().Add(-6*time.Minute))
 	if err != nil {
 		t.Error(err)
 	}
@@ -134,5 +138,11 @@ func TestFollowersTimeline(t *testing.T) {
 		if tweet.Text != expected[i] {
 			t.Error(tweet.Text + " is different from " + expected[i])
 		}
+	}
+	if rateLimit.Limit != 10 || rateLimit.Remaining != 15 {
+		t.Error("rate limit is incorrect")
+	}
+	if rateLimit.Reset <= time.Now().Unix() {
+		t.Error("reset time is too old")
 	}
 }
