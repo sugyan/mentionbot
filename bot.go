@@ -60,11 +60,11 @@ func (bot *Bot) SetMentioner(m Mentioner) {
 
 // Run bot
 func (bot *Bot) Run() (err error) {
-	rateLimitResult, err := bot.rateLimitStatus([]string{"users"})
+	rateLimitStatusResult, err := bot.rateLimitStatus([]string{"users"})
 	if err != nil {
 		return err
 	}
-	latestRateLimit := rateLimitResult.results.(RateLimitStatusResources).Users["/users/lookup"]
+	latestRateLimit := rateLimitStatusResult.results.(RateLimitStatusResources).Users["/users/lookup"]
 	latestCreatedAt := time.Now().Add(-15 * time.Minute)
 
 	for {
