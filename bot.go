@@ -64,7 +64,7 @@ func (bot *Bot) Run() (err error) {
 	if err != nil {
 		return err
 	}
-	latestRateLimit := rateLimitStatusResult.results.(RateLimitStatusResources).Users["/users/lookup"]
+	latestRateLimit := rateLimitStatusResult.results.(rateLimitStatusResources).Users["/users/lookup"]
 	latestCreatedAt := time.Now().Add(-15 * time.Minute)
 
 	for {
@@ -126,7 +126,7 @@ func (bot *Bot) Run() (err error) {
 	}
 }
 
-func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Timeline, rateLimit *RateLimitStatus, err error) {
+func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline timeline, rateLimit *rateLimitStatus, err error) {
 	defer func() {
 		// sort by createdAt
 		if timeline != nil {
@@ -186,7 +186,7 @@ func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline Time
 		close(out)
 	}()
 	// collect all results
-	rateLimit = &RateLimitStatus{}
+	rateLimit = &rateLimitStatus{}
 Loop:
 	for {
 		select {
@@ -222,20 +222,19 @@ Loop:
 	return
 }
 
-// Timeline is array of tweet which can sort by createdAt
-type Timeline []*Tweet
+type timeline []*Tweet
 
-func (t Timeline) Len() int {
+func (t timeline) Len() int {
 	return len(t)
 }
 
-func (t Timeline) Less(i, j int) bool {
+func (t timeline) Less(i, j int) bool {
 	// ignore parse error
 	t1, _ := t[i].CreatedAtTime()
 	t2, _ := t[j].CreatedAtTime()
 	return t1.Before(t2)
 }
 
-func (t Timeline) Swap(i, j int) {
+func (t timeline) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }

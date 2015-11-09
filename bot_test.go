@@ -17,7 +17,7 @@ func mockServer() *httptest.Server {
 		var data interface{}
 		switch r.URL.Path {
 		case "/1.1/followers/ids.json":
-			data = CursoringIDs{
+			data = cursoringIDs{
 				IDs:               []int64{100, 200, 300},
 				PreviousCursor:    0,
 				PreviousCursorStr: "0",
@@ -49,9 +49,9 @@ func mockServer() *httptest.Server {
 				},
 			}
 		case "/1.1/application/rate_limit_status.json":
-			data = RateLimit{
-				Resources: RateLimitStatusResources{
-					Users: map[string]RateLimitStatus{"/users/lookup": RateLimitStatus{
+			data = rateLimit{
+				Resources: rateLimitStatusResources{
+					Users: map[string]rateLimitStatus{"/users/lookup": rateLimitStatus{
 						Limit:     180,
 						Remaining: 180,
 						Reset:     time.Now().Add(15 * time.Minute).Unix(),
@@ -95,7 +95,7 @@ func TestRateLimitStatus(t *testing.T) {
 		t.Error(err)
 	}
 
-	data := RateLimit{}
+	data := rateLimit{}
 	_, err = bot.request(req, &data)
 	if err != nil {
 		t.Error(err)
