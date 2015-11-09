@@ -19,7 +19,7 @@ type Bot struct {
 	userID    string
 	client    *twittergo.Client
 	mentioner Mentioner
-	idsCache  idsCache
+	idsStore  idsStore
 	debug     bool
 }
 
@@ -44,7 +44,7 @@ func NewBot(config *Config) *Bot {
 	return &Bot{
 		userID:   config.UserID,
 		client:   client,
-		idsCache: idsCache{},
+		idsStore: idsStore{},
 	}
 }
 
@@ -134,11 +134,17 @@ func (bot *Bot) followersTimeline(userID string, since time.Time) (timeline time
 		}
 	}()
 
-	idsResults, err := bot.followersIDs(userID)
-	if err != nil {
-		return nil, nil, err
+	// IDs from cache or API
+	ids := bot.idsStore.pickIds()
+	if ids == nil {
+		idsResults, err := bot.followersIDs(userID)
+		if err != nil {
+			return nil, nil, err
+		}
+		results := idsResults.results.([]int64)
+		bot.idsStore.setIds(results, 15*time.Minute)
+		ids = bot.idsStore.pickIds()
 	}
-	ids := idsResults.results.([]int64)
 
 	type result struct {
 		apiResult *apiResult
@@ -220,21 +226,4 @@ Loop:
 		}
 	}
 	return
-}
-
-type timeline []*Tweet
-
-func (t timeline) Len() int {
-	return len(t)
-}
-
-func (t timeline) Less(i, j int) bool {
-	// ignore parse error
-	t1, _ := t[i].CreatedAtTime()
-	t2, _ := t[j].CreatedAtTime()
-	return t1.Before(t2)
-}
-
-func (t timeline) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
 }

@@ -93,8 +93,25 @@ type rateLimitStatus struct {
 	Reset     int64  `json:"reset"`
 }
 
-func (rls rateLimitStatus) ResetTime() time.Time {
+func (rls rateLimitStatus) resetTime() time.Time {
 	return time.Unix(rls.Reset, 0)
+}
+
+type timeline []*Tweet
+
+func (t timeline) Len() int {
+	return len(t)
+}
+
+func (t timeline) Less(i, j int) bool {
+	// ignore parse error
+	t1, _ := t[i].CreatedAtTime()
+	t2, _ := t[j].CreatedAtTime()
+	return t1.Before(t2)
+}
+
+func (t timeline) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
 }
 
 type apiResult struct {
@@ -111,7 +128,6 @@ func (bot *Bot) usersLookup(ids []int64) (*apiResult, error) {
 	for i, id := range ids {
 		strIds[i] = strconv.FormatInt(id, 10)
 	}
-	// GET(POST) users/lookup
 	query := url.Values{}
 	query.Set("user_id", strings.Join(strIds, ","))
 	body := query.Encode()
@@ -131,12 +147,8 @@ func (bot *Bot) usersLookup(ids []int64) (*apiResult, error) {
 
 // GET followers/ids
 func (bot *Bot) followersIDs(userID string) (*apiResult, error) {
-	var ids []int64
-	// cache 15 minutes
-	if ids = bot.idsCache.GetIds(); ids != nil {
-		return &apiResult{results: ids}, nil
-	}
 	var (
+		ids       []int64
 		rateLimit *rateLimitStatus
 		cursor    string
 	)
@@ -166,7 +178,6 @@ func (bot *Bot) followersIDs(userID string) (*apiResult, error) {
 			cursor = results.NextCursorStr
 		}
 	}
-	bot.idsCache.SetIds(ids, 0)
 	return &apiResult{
 		results:   ids,
 		rateLimit: rateLimit,
