@@ -35,3 +35,18 @@ func (store *idsStore) pickIds() (ids []int64) {
 	}
 	return store.ids[0:maxNum]
 }
+
+func (current *rateLimitStatus) waitSeconds(last *rateLimitStatus) int64 {
+	var wait int64 = 10
+	if diff := int(last.Remaining) - int(current.Remaining); diff > 0 {
+		num := int(current.Remaining) / diff
+		if num == 0 {
+			num++
+		}
+		w := (current.Reset - time.Now().Unix()) / int64(num)
+		if w > wait {
+			wait = w
+		}
+	}
+	return wait
+}

@@ -103,26 +103,14 @@ func (bot *Bot) Run() (err error) {
 		}
 
 		// calculate waiting time
-		if bot.debug {
-			log.Printf("rate limit: (%d -> %d) / %d", latestRateLimit.Remaining, rateLimit.Remaining, rateLimit.Limit)
-		}
-		var maxWait int64 = 10
-		if diff := int(latestRateLimit.Remaining) - int(rateLimit.Remaining); diff > 0 {
-			num := int(rateLimit.Remaining) / diff
-			if num == 0 {
-				num++
-			}
-			wait := (rateLimit.Reset - time.Now().Unix()) / int64(num)
-			if wait > maxWait {
-				maxWait = wait
-			}
-		}
+		wait := rateLimit.waitSeconds(&latestRateLimit)
+		// update latestRateLimit
 		latestRateLimit = *rateLimit
 
 		if bot.debug {
-			log.Printf("wait %d seconds for next loop", maxWait)
+			log.Printf("wait %d seconds for next loop", wait)
 		}
-		<-time.Tick(time.Second * time.Duration(maxWait))
+		<-time.Tick(time.Second * time.Duration(wait))
 	}
 }
 
