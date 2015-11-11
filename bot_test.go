@@ -1,7 +1,6 @@
 package mentionbot
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -14,12 +13,12 @@ import (
 
 func mockServer() (*httptest.Server, map[string]int) {
 	callCounts := make(map[string]int)
-	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCounts[r.URL.Path]++
 
 		var data interface{}
 		switch r.URL.Path {
-		case "/1.1/followers/ids.json":
+		case "/followers/ids.json":
 			data = cursoringIDs{
 				IDs:               []int64{100, 200, 300},
 				PreviousCursor:    0,
@@ -27,7 +26,7 @@ func mockServer() (*httptest.Server, map[string]int) {
 				NextCursor:        0,
 				NextCursorStr:     "0",
 			}
-		case "/1.1/users/lookup.json":
+		case "/users/lookup.json":
 			data = []User{
 				User{
 					ID: 100,
@@ -51,7 +50,7 @@ func mockServer() (*httptest.Server, map[string]int) {
 					},
 				},
 			}
-		case "/1.1/application/rate_limit_status.json":
+		case "/application/rate_limit_status.json":
 			data = rateLimit{
 				Resources: rateLimitStatusResources{
 					Users: map[string]rateLimitStatus{"/users/lookup": rateLimitStatus{
@@ -77,29 +76,14 @@ func mockServer() (*httptest.Server, map[string]int) {
 
 func TestRateLimitStatus(t *testing.T) {
 	bot := NewBot(&Config{})
-	{
-		server, _ := mockServer()
-		defer server.Close()
-
-		serverURL, err := url.Parse(server.URL)
-		if err != nil {
-			t.Error(err)
-		}
-		bot.client.Host = serverURL.Host
-		bot.client.HttpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
+	server, _ := mockServer()
+	defer server.Close()
+	bot.apiBase = server.URL
 
 	query := url.Values{}
 	query.Set("resources", "users")
-	req, err := http.NewRequest("GET", "/1.1/application/rate_limit_status.json?"+query.Encode(), nil)
-	if err != nil {
-		t.Error(err)
-	}
-
 	data := rateLimit{}
-	_, err = bot.request(req, &data)
+	_, err := bot.request("GET", "/application/rate_limit_status.json", query, &data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -115,23 +99,9 @@ func TestRateLimitStatus(t *testing.T) {
 
 func TestFollowersTimeline(t *testing.T) {
 	bot := NewBot(&Config{})
-	var (
-		server     *httptest.Server
-		callCounts map[string]int
-	)
-	{
-		server, callCounts = mockServer()
-		defer server.Close()
-
-		serverURL, err := url.Parse(server.URL)
-		if err != nil {
-			t.Error(err)
-		}
-		bot.client.Host = serverURL.Host
-		bot.client.HttpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
+	server, callCounts := mockServer()
+	defer server.Close()
+	bot.apiBase = server.URL
 
 	for i := 0; i < 3; i++ {
 		timeline, rateLimit, err := bot.followersTimeline("dummy", time.Now().Add(-6*time.Minute))
@@ -153,7 +123,7 @@ func TestFollowersTimeline(t *testing.T) {
 		if rateLimit.Reset <= time.Now().Unix() {
 			t.Error("reset time is too old")
 		}
-		if callCounts["/1.1/followers/ids.json"] != 1 {
+		if callCounts["/followers/ids.json"] != 1 {
 			t.Error("ids must be cached")
 		}
 	}

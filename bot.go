@@ -1,8 +1,7 @@
 package mentionbot
 
 import (
-	"github.com/kurrik/oauth1a"
-	"github.com/kurrik/twittergo"
+	"github.com/garyburd/go-oauth/oauth"
 	"log"
 	"sort"
 	"sync"
@@ -16,11 +15,13 @@ type Mentioner interface {
 
 // Bot type
 type Bot struct {
-	userID    string
-	client    *twittergo.Client
-	mentioner Mentioner
-	idsStore  idsStore
-	debug     bool
+	userID      string
+	client      *oauth.Client
+	credentials *oauth.Credentials
+	mentioner   Mentioner
+	idsStore    *idsStore
+	apiBase     string
+	debug       bool
 }
 
 // Config type
@@ -34,17 +35,20 @@ type Config struct {
 
 // NewBot returns new bot
 func NewBot(config *Config) *Bot {
-	client := twittergo.NewClient(&oauth1a.ClientConfig{
-		ConsumerKey:    config.ConsumerKey,
-		ConsumerSecret: config.ConsumerSecret,
-	}, &oauth1a.UserConfig{
-		AccessTokenKey:    config.AccessToken,
-		AccessTokenSecret: config.AccessTokenSecret,
-	})
 	return &Bot{
-		userID:   config.UserID,
-		client:   client,
-		idsStore: idsStore{},
+		userID: config.UserID,
+		client: &oauth.Client{
+			Credentials: oauth.Credentials{
+				Token:  config.ConsumerKey,
+				Secret: config.ConsumerSecret,
+			},
+		},
+		credentials: &oauth.Credentials{
+			Token:  config.AccessToken,
+			Secret: config.AccessTokenSecret,
+		},
+		idsStore: &idsStore{},
+		apiBase:  "https://api.twitter.com/1.1",
 	}
 }
 

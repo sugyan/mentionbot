@@ -88,9 +88,9 @@ type rateLimitStatusResources struct {
 }
 
 type rateLimitStatus struct {
-	Limit     uint32 `json:"limit"`
-	Remaining uint32 `json:"remaining"`
-	Reset     int64  `json:"reset"`
+	Limit     int   `json:"limit"`
+	Remaining int   `json:"remaining"`
+	Reset     int64 `json:"reset"`
 }
 
 func (rls rateLimitStatus) resetTime() time.Time {
@@ -130,12 +130,10 @@ func (bot *Bot) usersLookup(ids []int64) (*apiResult, error) {
 	}
 	query := url.Values{}
 	query.Set("user_id", strings.Join(strIds, ","))
-	body := query.Encode()
-	req, err := http.NewRequest("POST", "/1.1/users/lookup.json", strings.NewReader(body))
-	req.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 
+	// get users
 	users := make([]User, len(ids))
-	rateLimit, err := bot.request(req, &users)
+	rateLimit, err := bot.request("POST", "/users/lookup.json", query, &users)
 	if err != nil {
 		return nil, err
 	}
@@ -159,14 +157,11 @@ func (bot *Bot) followersIDs(userID string) (*apiResult, error) {
 		if cursor != "" {
 			query.Set("cursor", cursor)
 		}
-		req, err := http.NewRequest("GET", "/1.1/followers/ids.json?"+query.Encode(), nil)
-		if err != nil {
-			return nil, err
-		}
 
-		// cursor result
+		// get cursor
+		var err error
 		results := cursoringIDs{}
-		if rateLimit, err = bot.request(req, &results); err != nil {
+		if rateLimit, err = bot.request("GET", "/followers/ids.json", query, &results); err != nil {
 			return nil, err
 		}
 		ids = append(ids, results.IDs...)
@@ -189,13 +184,10 @@ func (bot *Bot) followersIDs(userID string) (*apiResult, error) {
 func (bot *Bot) rateLimitStatus(resourceParams []string) (*apiResult, error) {
 	query := url.Values{}
 	query.Set("resources", strings.Join(resourceParams, ","))
-	req, err := http.NewRequest("GET", "/1.1/application/rate_limit_status.json?"+query.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
 
+	// get results
 	results := rateLimit{}
-	rateLimit, err := bot.request(req, &results)
+	rateLimit, err := bot.request("GET", "/application/rate_limit_status.json", query, &results)
 	if err != nil {
 		return nil, err
 	}
@@ -205,27 +197,42 @@ func (bot *Bot) rateLimitStatus(resourceParams []string) (*apiResult, error) {
 	}, nil
 }
 
-func (bot *Bot) request(req *http.Request, data interface{}) (rateLimit *rateLimitStatus, err error) {
+func (bot *Bot) request(mehtod string, url string, form url.Values, data interface{}) (rateLimit *rateLimitStatus, err error) {
 	if bot.debug {
-		log.Printf("request: %s %s", req.Method, req.URL)
+		log.Printf("%s %s", mehtod, url)
 	}
-	res, err := bot.client.SendRequest(req)
+
+	url = bot.apiBase + url
+	var res *http.Response
+	switch mehtod {
+	case "GET":
+		res, err = bot.client.Get(nil, bot.credentials, url, form)
+	case "POST":
+		res, err = bot.client.Post(nil, bot.credentials, url, form)
+	default:
+		return nil, errors.New("unsupported method")
+	}
 	if err != nil {
 		return
 	}
+	// not 200 also returns error
 	if res.StatusCode != 200 {
 		if bot.debug {
 			log.Printf("response: %s", res.Status)
 		}
 		return nil, errors.New(res.Status)
 	}
-	if res.HasRateLimit() {
-		rateLimit = &rateLimitStatus{
-			Limit:     res.RateLimit(),
-			Remaining: res.RateLimitRemaining(),
-			Reset:     res.RateLimitReset().Unix(),
-		}
+
+	// rate limit from response header (ignore parse errors)
+	limit, _ := strconv.Atoi(res.Header.Get("X-Rate-Limit-Limit"))
+	remaining, _ := strconv.Atoi(res.Header.Get("X-Rate-Limit-Remaining"))
+	reset, _ := strconv.ParseInt(res.Header.Get("X-Rate-Limit-Reset"), 10, 64)
+	rateLimit = &rateLimitStatus{
+		Limit:     limit,
+		Remaining: remaining,
+		Reset:     reset,
 	}
+	// decode reponse
 	if err = json.NewDecoder(res.Body).Decode(&data); err != nil {
 		return
 	}
