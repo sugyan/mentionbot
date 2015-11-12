@@ -83,7 +83,7 @@ func TestRateLimitStatus(t *testing.T) {
 	query := url.Values{}
 	query.Set("resources", "users")
 	data := rateLimit{}
-	_, err := bot.request("GET", "/application/rate_limit_status.json", query, &data)
+	_, err := bot.request(get, "/application/rate_limit_status.json", query, &data)
 	if err != nil {
 		t.Error(err)
 	}

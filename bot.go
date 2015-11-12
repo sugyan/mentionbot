@@ -94,8 +94,11 @@ func (bot *Bot) Run() (err error) {
 				if bot.debug {
 					log.Printf("(%s)[%v] @%s: %s", tweet.IDStr, createdAt.Local(), tweet.User.ScreenName, tweet.Text)
 				}
-				// TODO reply tweet
-				log.Println(*mention)
+				updated, err := bot.statusesUpdate(*mention, tweet)
+				if err != nil {
+					return nil
+				}
+				log.Println(updated.results.(Tweet).Text)
 			}
 		}
 		// udpate latestCreatedAt

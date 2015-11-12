@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+const (
+	get = iota
+	post
+)
+
 // Tweet type
 type Tweet struct {
 	CreatedAt            string `json:"created_at"`
@@ -133,7 +138,7 @@ func (bot *Bot) usersLookup(ids []int64) (*apiResult, error) {
 
 	// get users
 	users := make([]User, len(ids))
-	rateLimit, err := bot.request("POST", "/users/lookup.json", query, &users)
+	rateLimit, err := bot.request(post, "/users/lookup.json", query, &users)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +166,7 @@ func (bot *Bot) followersIDs(userID string) (*apiResult, error) {
 		// get cursor
 		var err error
 		results := cursoringIDs{}
-		if rateLimit, err = bot.request("GET", "/followers/ids.json", query, &results); err != nil {
+		if rateLimit, err = bot.request(get, "/followers/ids.json", query, &results); err != nil {
 			return nil, err
 		}
 		ids = append(ids, results.IDs...)
@@ -187,7 +192,7 @@ func (bot *Bot) rateLimitStatus(resourceParams []string) (*apiResult, error) {
 
 	// get results
 	results := rateLimit{}
-	rateLimit, err := bot.request("GET", "/application/rate_limit_status.json", query, &results)
+	rateLimit, err := bot.request(get, "/application/rate_limit_status.json", query, &results)
 	if err != nil {
 		return nil, err
 	}
@@ -197,17 +202,34 @@ func (bot *Bot) rateLimitStatus(resourceParams []string) (*apiResult, error) {
 	}, nil
 }
 
-func (bot *Bot) request(mehtod string, url string, form url.Values, data interface{}) (rateLimit *rateLimitStatus, err error) {
+// POST statuses/update
+func (bot *Bot) statusesUpdate(mention string, tweet *Tweet) (*apiResult, error) {
+	query := url.Values{}
+	query.Set("status", "@"+tweet.User.ScreenName+" "+mention)
+	query.Set("in_reply_to_status_id", tweet.IDStr)
+	// tweet
+	updated := Tweet{}
+	rateLimit, err := bot.request(post, "/statuses/update.json", query, &updated)
+	if err != nil {
+		return nil, err
+	}
+	return &apiResult{
+		results:   updated,
+		rateLimit: rateLimit,
+	}, nil
+}
+
+func (bot *Bot) request(mehtod int, url string, form url.Values, data interface{}) (rateLimit *rateLimitStatus, err error) {
 	if bot.debug {
-		log.Printf("%s %s", mehtod, url)
+		log.Printf("%s %s", []string{"GET", "POST"}[mehtod], url)
 	}
 
 	url = bot.apiBase + url
 	var res *http.Response
 	switch mehtod {
-	case "GET":
+	case get:
 		res, err = bot.client.Get(nil, bot.credentials, url, form)
-	case "POST":
+	case post:
 		res, err = bot.client.Post(nil, bot.credentials, url, form)
 	default:
 		return nil, errors.New("unsupported method")

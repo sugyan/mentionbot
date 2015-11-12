@@ -21,7 +21,7 @@ func TestRequest(t *testing.T) {
 	bot.apiBase = server.URL
 
 	results := struct{}{}
-	rateLimit, err := bot.request("GET", "/foo/bar", url.Values{}, &results)
+	rateLimit, err := bot.request(get, "/foo/bar", url.Values{}, &results)
 	if err != nil {
 		t.Error(err)
 	}
