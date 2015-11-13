@@ -237,6 +237,7 @@ func (bot *Bot) request(mehtod int, url string, form url.Values, data interface{
 	if err != nil {
 		return
 	}
+	defer res.Body.Close()
 	// not 200 also returns error
 	if res.StatusCode != 200 {
 		if bot.debug {
