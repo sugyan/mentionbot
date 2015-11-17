@@ -47,6 +47,14 @@ func mockServer() (*httptest.Server, map[string]int) {
 					Status: &Tweet{
 						CreatedAt: time.Now().Add(-2 * time.Minute).Format(time.RubyDate),
 						Text:      "baz",
+						Entities: Entities{
+							Media:            []struct{}{struct{}{}},
+							Urls:             []struct{}{},
+							UserMentions:     []struct{}{},
+							Hashtags:         []struct{}{},
+							Symbols:          []struct{}{},
+							ExtendedEntities: []struct{}{},
+						},
 					},
 				},
 			}
@@ -117,14 +125,23 @@ func TestFollowersTimeline(t *testing.T) {
 				t.Error(tweet.Text + " is different from " + expected[i])
 			}
 		}
+		// rate limit
 		if rateLimit.Limit != 10 || rateLimit.Remaining != 15 {
 			t.Error("rate limit is incorrect")
 		}
 		if rateLimit.Reset <= time.Now().Unix() {
 			t.Error("reset time is too old")
 		}
+		// calls
 		if callCounts["/followers/ids.json"] != 1 {
 			t.Error("ids must be cached")
+		}
+		// entities
+		if len(timeline[0].Entities.Media) != 0 {
+			t.Error("timeline[0] shoudn't have medias")
+		}
+		if len(timeline[1].Entities.Media) != 1 {
+			t.Error("timeline[1] shoud have 1 media")
 		}
 	}
 }

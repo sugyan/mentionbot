@@ -18,23 +18,24 @@ const (
 
 // Tweet type
 type Tweet struct {
-	CreatedAt            string `json:"created_at"`
-	FavoriteCount        int    `json:"favorite_count"`
-	Favorited            bool   `json:"favorited"`
-	ID                   int64  `json:"id"`
-	IDStr                string `json:"id_str"`
-	InReplyToScreenName  string `json:"in_reply_to_screen_name"`
-	InReplyToStatusID    int64  `json:"in_reply_to_status_id"`
-	InReplyToStatusIDStr string `json:"in_reply_to_status_id_str"`
-	InReplyToUserID      int64  `json:"in_reply_to_user_id"`
-	InReplyToUserIDStr   string `json:"in_reply_to_user_id_str"`
-	Lang                 string `json:"lang"`
-	RetweetCount         int    `json:"retweet_count"`
-	Retweeted            bool   `json:"retweeted"`
-	RetweetedStatus      *Tweet `json:"retweeted_status"`
-	Source               string `json:"source"`
-	Text                 string `json:"text"`
-	User                 User   `json:"user"`
+	CreatedAt            string   `json:"created_at"`
+	FavoriteCount        int      `json:"favorite_count"`
+	Favorited            bool     `json:"favorited"`
+	ID                   int64    `json:"id"`
+	IDStr                string   `json:"id_str"`
+	InReplyToScreenName  string   `json:"in_reply_to_screen_name"`
+	InReplyToStatusID    int64    `json:"in_reply_to_status_id"`
+	InReplyToStatusIDStr string   `json:"in_reply_to_status_id_str"`
+	InReplyToUserID      int64    `json:"in_reply_to_user_id"`
+	InReplyToUserIDStr   string   `json:"in_reply_to_user_id_str"`
+	Lang                 string   `json:"lang"`
+	RetweetCount         int      `json:"retweet_count"`
+	Retweeted            bool     `json:"retweeted"`
+	RetweetedStatus      *Tweet   `json:"retweeted_status"`
+	Source               string   `json:"source"`
+	Text                 string   `json:"text"`
+	User                 User     `json:"user"`
+	Entities             Entities `json:"entities"`
 }
 
 // CreatedAtTime returns the created_at time, parsed as a time.Time struct
@@ -64,6 +65,16 @@ type User struct {
 	StatusesCount     int64  `json:"statuses_count"`
 	URL               string `json:"url"`
 	Verified          bool   `json:"verified"`
+}
+
+// Entities type
+type Entities struct {
+	Media            []interface{} `json:"media"`
+	Urls             []interface{} `json:"urls"`
+	UserMentions     []interface{} `json:"user_mentions"`
+	Hashtags         []interface{} `json:"hashtags"`
+	Symbols          []interface{} `json:"symbols"`
+	ExtendedEntities []interface{} `json:"extended_entities"`
 }
 
 type cursoringIDs struct {
